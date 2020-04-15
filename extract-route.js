@@ -49,21 +49,29 @@ if (! nif) {
     process.exit(1);
 }
 
-const hostsStatus = new Map();
+const activeHosts = [];
+const inactiveHosts = [];
 
-const extractExternalIps = (ipFilter, cb) => {
+/**
+ * From the pcap file, extract all the IP address as IP sender or receiver,
+ * then return an unique list of all the appeared IPs.
+ */
+const extractHosts = cb => {
     const tcpdump = spawn('tcpdump', ['-r', file, '-nn', 'ip']);
-    const rl = require('readline').createInterface({
+    const stdout = require('readline').createInterface({
         input: tcpdump.stdout,
+    });
+    const stderr = require('readline').createInterface({
+        input: tcpdump.stderr,
     });
 
     const summary = /^[0-9:.]+ IP ([0-9.]+) [<>] ([0-9.]+).*/;
     const ips = new Set();
-    const extIps = [];
-    var ip;
 
-    const extractIps = line => {
+    const parseLine = line => {
+        var ip;
         const match = line.match(summary);
+
         if (! match) return;
         for (var i = 1; i < 2; ++i) {
             /* it could be an ip or ip.port */
@@ -71,50 +79,100 @@ const extractExternalIps = (ipFilter, cb) => {
                 ip = match[i];
             else
                 ip = match[i].split('.').slice(0, 4).join('.');
-            ips.add(ip);
+            if (! localIps.includes(ip))
+                ips.add(ip);
         }
     };
 
-    const handleIps = ips => {
-        ips.forEach(ip => {
-            if (! localIps.includes(ip)) extIps.push(ip);
-        });
-        const networks = new Set();
-        var network;
-        extIps.forEach(ip => {
-            network = ip.split('.').slice(0, 3).join('.') + '.0/24';
-            networks.add(network);
-        });
-        cb(null, Array.from(networks));
-    };
+    stdout.on('line', parseLine);
+    stdout.on('close', () => {
+        cb(null, Array.from(ips));
+    });
+    stderr.on('line', line => {
+        if (line.search(/^reading from file/) != 0)
+            console.error(line);
+    });
+}
 
-    const doFilterIps = (ips, result, cb) => {
-        if (! ips.length) return cb(result);
+/* If I received from an IP of UDP or TCP data, I then consider the IP address
+ * is active.
+ */
+const isHostActive = (ip, cb) => {
+    const args = [
+        '-r',
+        file,
+        '-nn',
+        'src',
+        'host',
+        ip,
+        'and (',
+        'udp',
+        'or',
+        '( tcp',
+        'and',
+        'tcp[tcpflags] & (tcp-rst|tcp-syn|tcp-fin) == 0 ))',
+    ];
+    const tcpdump = spawn('tcpdump', args);
+    const stdout = require('readline').createInterface({
+        input: tcpdump.stdout,
+    });
+    const stderr = require('readline').createInterface({
+        input: tcpdump.stderr,
+    });
+
+    var packets = 0;
+    stdout.on('line', line => {
+        ++packets;
+    });
+    stdout.on('close', () => {
+        cb(null, packets > 0);
+    });
+    stderr.on('line', line => {
+        if (line.search(/^reading from file/) != 0)
+            console.error(line);
+    });
+};
+
+/**
+ * Go through a list of IPs, and returns back two lists, one is the active IP
+ * lists, the other is the inactive IP lists.
+ */
+const hostsPreProcess = (ips, cb) => {
+    const activeHosts = [];
+    const inactiveHosts = [];
+
+    const process = ips => {
+        if (! ips.length) return cb(null, activeHosts, inactiveHosts);
 
         const ip = ips[0];
         const remaining = ips.slice(1);
 
-        ipFilter(ip, (err, passed) => {
-            if (passed) result = [...result, ip];
-            doFilterIps(remaining, result, cb);
+        isHostActive(ip, (err, active) => {
+            if (active)
+                activeHosts.push(ip);
+            else
+                inactiveHosts.push(ip);
+            process(remaining);
         });
     };
 
-    const filterIps = () => {
-        doFilterIps(Array.from(ips), [], result => {
-            handleIps(result);
-        });
-    };
+    process(ips);
+};
 
-    rl.on('line', extractIps);
-    rl.on('close', filterIps);
-}
-
-const extractDnsRecords = (ipFilter, cb) => {
+/**
+ * From a list of ips, by query the pcap file, to generate a list of text
+ * lines, each of which is a name-resove like: 'ip a.b.com c.x.org'
+ */
+const extractNameResolve = (hosts, cb) => {
     const tcpdump = spawn('tcpdump', ['-r', file, '-nn', 'udp', 'port', '53']);
     const rl = require('readline').createInterface({
         input: tcpdump.stdout,
     });
+
+    const query = /.*\s>\s[0-9.]+\.53:\s([0-9]+)\+.*\sA\?\s([^\s]+)\.\s.*/;
+    const answer = /.*\s[0-9.]+\.53\s>\s[0-9.]+:\s([0-9]+)\s[^\s]+\s(.*)/;
+    const dnsLines = [];
+    var resolveLines = [];
     const queries = new Map();
 
     /* Each DNS answer could returns more than one names and more than one IPs.
@@ -122,8 +180,8 @@ const extractDnsRecords = (ipFilter, cb) => {
      * it. For all the reamining IPs that passed my check, I then build one or
      * more hosts-file lines that associate IPs and names.
      */
-    const parseDnsAnswer = (queryId, answer, cb) => {
-        if (! queries.has(queryId)) return cb(null, []);
+    const dnsAnswerToResolveLines = (queryId, answer) => {
+        if (! queries.has(queryId)) return [];
 
         const ipPattern = /^([0-9.]+),?$/;
         const names = [queries.get(queryId)];
@@ -159,135 +217,93 @@ const extractDnsRecords = (ipFilter, cb) => {
             }
         });
 
-        const buildHostLinesFromIpList = (ipList, result, cb) => {
-            if (! ipList.length) return cb(result);
-
-            const ip = ipList[0];
-            const remaining = ipList.slice(1);
-
-            ipFilter(ip, (err, passed) => {
-                if (passed) {
-                    var hostLine = ip;
-                    names.forEach((name, i) => {
-                        if (! i)
-                            hostLine += `\t\t${name}`
-                        else
-                            hostLine += ` ${name}`
-                    });
-                    result = [...result, hostLine];
-                }
-                buildHostLinesFromIpList(remaining, result, cb);
+        const resolves = [];
+        ips.forEach(ip => {
+            var resolveLine = ip;
+            names.forEach((name, i) => {
+                if (! i)
+                    resolveLine += `\t\t${name}`
+                else
+                    resolveLine += ` ${name}`
             });
-        };
-
-        buildHostLinesFromIpList(ips, [], result => {
-            cb(null, result);
+            resolves.push(resolveLine);
         });
+
+        return resolves;
     };
 
-    const query = /.*\s>\s[0-9.]+\.53:\s([0-9]+)\+.*\sA\?\s([^\s]+)\.\s.*/;
-    const answer = /.*\s[0-9.]+\.53\s>\s[0-9.]+:\s([0-9]+)\s[^\s]+\s(.*)/;
+    const parseDnsLine = line => {
+        const queryMatch = line.match(query);
+        const answerMatch = line.match(answer);
 
-    const handleDnsLines = (dnsLines, result, cb) => {
-        if (! dnsLines.length) return cb(null, result);
-
-        const dnsLine = dnsLines[0];
-        const remainingLines = dnsLines.slice(1);
-
-        const queryMatch = dnsLine.match(query);
-        const answerMatch = dnsLine.match(answer);
-
-        if (queryMatch) {
+        if (queryMatch)
             queries.set(queryMatch[1], queryMatch[2]);
-            handleDnsLines(remainingLines, result, cb);
-        } else if (answerMatch) {
-            parseDnsAnswer(answerMatch[1], answerMatch[2].trim(),
-                (err, hostLines) => {
-                    if (hostLines.length)
-                        result = [...result, ...hostLines];
-                    handleDnsLines(remainingLines, result, cb);
-                }
-            );
-        } else
-            handleDnsLines(remainingLines, result, cb);
+        else if (answerMatch)
+            resolveLines = resolveLines
+                .concat(dnsAnswerToResolveLines(
+                    answerMatch[1], answerMatch[2].trim()));
     };
 
-    const dnsLines = [];
     rl.on('line', line => {
         dnsLines.push(line);
     });
     rl.on('close', () => {
-        handleDnsLines(dnsLines, [], (err, hostLines) => {
-            cb(null, hostLines);
-        });
+        dnsLines.forEach(parseDnsLine);
+        cb(null, resolveLines);
     });
 }
 
-const isHostActive = (ip, cb) => {
-    if (hostsStatus.has(ip))
-        return cb(null, hostsStatus.get(ip) == 'active');
-
-    /* If I received from an IP of UDP or TCP data, I then consider the IP address
-     * is active.
-     */
-    const args = [
-        '-r',
-        file,
-        '-nn',
-        'src',
-        'host',
-        ip,
-        'and (',
-        'udp',
-        'or',
-        '( tcp',
-        'and',
-        'tcp[tcpflags] & (tcp-rst|tcp-syn|tcp-fin) == 0 ))',
-    ];
-    const tcpdump = spawn('tcpdump', args);
-    const stdout = require('readline').createInterface({
-        input: tcpdump.stdout,
-    });
-    const stderr = require('readline').createInterface({
-        input: tcpdump.stderr,
-    });
-
-    var packets = 0;
-    stdout.on('line', line => {
-        ++packets;
-    });
-    stdout.on('close', () => {
-        hostsStatus.set(ip, packets > 0 ? 'active' : 'inactive');
-        cb(null, packets > 0);
-    });
-    stderr.on('line', line => {
-        if (line.search(/^reading from file/) != 0)
-            console.error(line);
-    });
-};
-
-extractExternalIps(isHostActive, (err, routeDsts) => {
-    const ws = fs.createWriteStream('./routes.in');
-    routeDsts.forEach(dst => {
-        ws.write(`sudo ip route add ${dst} via ${gateway} dev ${nif}\n`);
-    });
-    ws.end();
-
-    extractDnsRecords(isHostActive, (err, hostLines) => {
-        const ws = fs.createWriteStream('./hosts.in');
-        hostLines.forEach(line => {
-            ws.write(`${line}\n`);
+extractHosts((err, hosts) => {
+    const saveHostList = (list, name) => {
+        const ws = fs.createWriteStream(`./${name}`);
+        list.forEach(e => {
+            ws.write(`${e}\n`);
         });
         ws.end();
-
-        const activeWs = fs.createWriteStream('./active-hosts');
-        const inactiveWs = fs.createWriteStream('./inactive-hosts');
-
-        hostsStatus.forEach((value, key) => {
-            var ws = value == 'active' ? activeWs : inactiveWs;
-            ws.write(`${key}\n`);
+    };
+    const saveNameResolves = list => {
+        const ws = fs.createWriteStream(`./name-resolve`);
+        const excludePatterns = [
+            /\bgoogle.com\b/,
+            /\bgoogleapis.com\b/,
+        ];
+        list.forEach(line => {
+            var exclude = false;
+            console.log(line);
+            excludePatterns.forEach(p => {
+                if (line.match(p)) exclude = true;
+            });
+            if (! exclude) ws.write(`${line}\n`);
         });
-        activeWs.end();
-        inactiveWs.end();
+        ws.end();
+    };
+    const saveRouteTable = (networkList, gateway, nif) => {
+        const ws = fs.createWriteStream('./route-table', {mode: 0o755});
+        ws.write('#!/bin/sh\n');
+        networkList.forEach(dst => {
+            ws.write(`ip route add ${dst} via ${gateway} dev ${nif}\n`);
+        });
+        ws.end();
+    };
+    const hostsToNetworkList = hosts => {
+        const networks = new Set();
+        var network;
+        hosts.forEach(ip => {
+            network = ip.split('.').slice(0, 3).join('.') + '.0/24';
+            networks.add(network);
+        });
+        return Array.from(networks);
+    };
+
+    console.log(`ttl ${hosts.length} hosts found`);
+    hostsPreProcess(hosts, (err, activeHosts, inactiveHosts) => {
+        saveHostList(activeHosts, 'active-hosts');
+        saveHostList(inactiveHosts, 'inactive-hosts');
+
+        saveRouteTable(hostsToNetworkList(activeHosts), gateway, nif);
+
+        extractNameResolve(activeHosts, (err, nameResolves) => {
+            saveNameResolves(nameResolves);
+        });
     });
 });
