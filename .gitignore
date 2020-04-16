@@ -1,1 +1,6 @@
 node_modules/
+log
+route-table
+name-resolve
+active-hosts
+inactive-hosts
