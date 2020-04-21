@@ -31,27 +31,27 @@ const argv = require('yargs')
     })
     .argv
 
+if (! argv.file) {
+    console.error('no pcap file provided');
+    process.exit(1);
+}
+if (! argv.localIp) {
+    console.error('no local ip address provided');
+    process.exit(1);
+}
+if (! argv.gateway) {
+    console.error('no gateway provided');
+    process.exit(1);
+}
+if (! argv.i) {
+    console.error('no network interface name provided');
+    process.exit(1);
+}
+
 const file = argv.file;
 const localIps = argv.localIp.split(',');
 const gateway = argv.gateway;
 const nif = argv.interface;
-
-if (! file) {
-    console.error('no pcap file provided');
-    process.exit(1);
-}
-if (! localIps.length) {
-    console.error('no local ip address provided');
-    process.exit(1);
-}
-if (! gateway) {
-    console.error('no gateway provided');
-    process.exit(1);
-}
-if (! nif) {
-    console.error('not network interface name provided');
-    process.exit(1);
-}
 
 const activeHosts = [];
 const inactiveHosts = [];
@@ -294,7 +294,8 @@ extractHosts((err, hosts) => {
             ws1.write(`ip route add ${dst} via ${gateway} dev ${nif}\n`);
             ws2.write(`ip route del ${dst} via ${gateway} dev ${nif}\n`);
         });
-        ws.end();
+        ws1.end();
+        ws2.end();
     };
     const hostsToNetworkList = hosts => {
         const networks = new Set();
