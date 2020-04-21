@@ -23,7 +23,11 @@ const argv = require('yargs')
     })
     .option('help', {
         alias: 'h',
-        description: 'usage',
+        description: 'Extrace route and name resolve inforation from a pcap'
+            + ' traffics file. It then create two script used for adding'
+            + ' and removing these route entries to/from a network interface.'
+            + ' A Unix hosts file also created for holding name resolution'
+            + ' information.',
     })
     .argv
 
@@ -147,13 +151,17 @@ const hostsPreProcess = (ips, cb) => {
         const ip = ips[0];
         const remaining = ips.slice(1);
 
-        isHostActive(ip, (err, active) => {
-            if (active)
-                activeHosts.push(ip);
-            else
-                inactiveHosts.push(ip);
+        if (ip.search(/^0\.0\.0\./) == 0) {
+            console.log(`skip ${ip}`);
             process(remaining);
-        });
+        } else
+            isHostActive(ip, (err, active) => {
+                if (active)
+                    activeHosts.push(ip);
+                else
+                    inactiveHosts.push(ip);
+                process(remaining);
+            });
     };
 
     process(ips);
@@ -278,10 +286,13 @@ extractHosts((err, hosts) => {
         ws.end();
     };
     const saveRouteTable = (networkList, gateway, nif) => {
-        const ws = fs.createWriteStream('./route-table', {mode: 0o755});
-        ws.write('#!/bin/sh\n');
+        const ws1 = fs.createWriteStream('./route-table-add', {mode: 0o755});
+        const ws2 = fs.createWriteStream('./route-table-del', {mode: 0o755});
+        ws1.write('#!/bin/sh\n');
+        ws2.write('#!/bin/sh\n');
         networkList.forEach(dst => {
-            ws.write(`ip route add ${dst} via ${gateway} dev ${nif}\n`);
+            ws1.write(`ip route add ${dst} via ${gateway} dev ${nif}\n`);
+            ws2.write(`ip route del ${dst} via ${gateway} dev ${nif}\n`);
         });
         ws.end();
     };
