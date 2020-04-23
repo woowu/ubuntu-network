@@ -14,8 +14,8 @@ if [ ! -n "$rt" ]; then
     exit 1
 fi
 
-add_script=.$nif.add.default
-del_script=.$nif.del.default
+add_script=$nif.add.default
+del_script=$nif.del.default
 
 echo "#!/bin/bash" > ${add_script}
 echo "ip route add ${rt}" >> ${add_script}

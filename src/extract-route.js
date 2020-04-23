@@ -2,20 +2,13 @@
 'require strict';
 
 const fs = require('fs');
+const os = require('os');
 const spawn = require('child_process').spawn;
 
 const argv = require('yargs')
     .option('file', {
         alias: 'f',
         description: 'pcap file',
-    })
-    .option('local-ip', {
-        alias: 'l',
-        descriptions: 'comma-separated list of local IP\'s',
-    })
-    .option('gateway', {
-        alias: 'g',
-        description: 'gateway IP used to create route entries',
     })
     .option('interface', {
         alias: 'i',
@@ -35,26 +28,49 @@ if (! argv.file) {
     console.error('no pcap file provided');
     process.exit(1);
 }
-if (! argv.localIp) {
-    console.error('no local ip address provided');
-    process.exit(1);
-}
-if (! argv.gateway) {
-    console.error('no gateway provided');
-    process.exit(1);
-}
 if (! argv.i) {
     console.error('no network interface name provided');
     process.exit(1);
 }
 
 const file = argv.file;
-const localIps = argv.localIp.split(',');
-const gateway = argv.gateway;
 const nif = argv.interface;
 
 const activeHosts = [];
 const inactiveHosts = [];
+
+var localIps;
+var gateway;
+
+const getLocalIps = nif => {
+    const descList = os.networkInterfaces()[nif];
+    const addresses = [];
+
+    if (! descList) return null;
+    descList.forEach(desc => {
+        if (desc.family != 'IPv4') return;
+        addresses.push(desc.address);
+    });
+    return addresses;
+};
+
+const getGatewayIp = (nif, cb) => {
+    const iproute = spawn('ip', ['route', 'show']);
+    const stdout = require('readline').createInterface({
+        input: iproute.stdout,
+    });
+    const pat = /default via ([0-9.]+) dev ([^\s])+ .*/;
+
+    var gw;
+    stdout.on('line', line => {
+        const match = line.match(pat);
+        if (! match || match[2] != nif) return;
+        gw = match[1];
+    });
+    stdout.on('close', () => {
+        cb(null, gw);
+    });
+};
 
 /**
  * From the pcap file, extract all the IP address as IP sender or receiver,
@@ -261,7 +277,7 @@ const extractNameResolve = (hosts, cb) => {
     });
 }
 
-extractHosts((err, hosts) => {
+const handleExtractedHosts = hosts => {
     const saveHostList = (list, name) => {
         const ws = fs.createWriteStream(`./${name}`);
         list.forEach(e => {
@@ -271,17 +287,33 @@ extractHosts((err, hosts) => {
     };
     const saveNameResolves = list => {
         const ws = fs.createWriteStream(`./name-resolve`);
-        const excludePatterns = [
+        const blacklist = [
             /\bgoogle.com\b/,
             /\bgoogleapis.com\b/,
+            /\blastpass.com\b/,
+            /\bmicrosoftonline.com\b/,
+            /\bmicrosoft.com\b/,
+            /\bdropbox.com\b/,
+        ];
+        const whitelist = [
+            /honeywell/,
+            /concursolutions/,
         ];
         list.forEach(line => {
-            var exclude = false;
-            console.log(line);
-            excludePatterns.forEach(p => {
-                if (line.match(p)) exclude = true;
+            //var exclude = false;
+            var include = false;
+            //blacklist.forEach(p => {
+            //    if (line.match(p)) exclude = true;
+            //});
+            whitelist.forEach(p => {
+                if (line.toLowerCase().match(p))
+                    include = true;
             });
-            if (! exclude) ws.write(`${line}\n`);
+            //if (! exclude) ws.write(`${line}\n`);
+            if (include)
+                ws.write(`${line}\n`);
+            else
+                console.log('skip:', line);
         });
         ws.end();
     };
@@ -291,8 +323,8 @@ extractHosts((err, hosts) => {
         ws1.write('#!/bin/sh\n');
         ws2.write('#!/bin/sh\n');
         networkList.forEach(dst => {
-            ws1.write(`ip route add ${dst} via ${gateway} dev ${nif}\n`);
-            ws2.write(`ip route del ${dst} via ${gateway} dev ${nif}\n`);
+            ws1.write(`ip route add ${dst} via \$1 dev ${nif}\n`);
+            ws2.write(`ip route del ${dst} via \$1 dev ${nif}\n`);
         });
         ws1.end();
         ws2.end();
@@ -317,5 +349,28 @@ extractHosts((err, hosts) => {
         extractNameResolve(activeHosts, (err, nameResolves) => {
             saveNameResolves(nameResolves);
         });
+    });
+};
+
+localIps = getLocalIps(nif);
+
+if (! localIps || ! localIps.length) {
+    console.log(`${nif} not asssigned with ip address`);
+    process.exit(1);
+}
+
+getGatewayIp(nif, (err, gw) => {
+    if (err) {
+        console.error(err);
+        process.exit(1);
+    }
+    gateway = gw;
+
+    extractHosts((err, hosts) => {
+        if (err) {
+            console.error(err);
+            process.exit(1);
+        }
+        handleExtractedHosts(hosts);
     });
 });

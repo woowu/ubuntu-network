@@ -4,3 +4,5 @@ route-table
 name-resolve
 active-hosts
 inactive-hosts
+*.add.default
+*.del.default
