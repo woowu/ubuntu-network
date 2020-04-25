@@ -8,6 +8,7 @@ fi
 nif=$1
 
 rt=`ip route show | grep "default via .* dev $nif"`
+rt=`echo $rt | sed 's/proto .*//g'`
 
 if [ ! -n "$rt" ]; then
     echo "default route for $nif not found"
