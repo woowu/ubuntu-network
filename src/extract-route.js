@@ -323,8 +323,8 @@ const handleExtractedHosts = hosts => {
         ws1.write('#!/bin/sh\n');
         ws2.write('#!/bin/sh\n');
         networkList.forEach(dst => {
-            ws1.write(`ip route add ${dst} via \$1 dev ${nif}\n`);
-            ws2.write(`ip route del ${dst} via \$1 dev ${nif}\n`);
+            ws1.write(`ip route add ${dst} via \$1 dev \$2\n`);
+            ws2.write(`ip route del ${dst} via \$1 dev \$2\n`);
         });
         ws1.end();
         ws2.end();
