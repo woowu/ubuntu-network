@@ -1,19 +1,36 @@
 #!/bin/bash
 #
-# Delte current default route entries and insert a new one given from
+# Delete current default route entries and insert a new one given from
 # command line.
 
-if [ $# != 2 ]; then
-    echo gw ip dev
+if [ $# -eq 1 ]; then
+    case $1 in
+        -list)
+            echo honlan
+            echo iphone
+            echo jike
+            ;;
+        honlan)
+            gw_ip=159.99.248.1
+            ;;
+        iphone)
+            gw_ip=172.20.10.1
+            ;;
+        jike)
+            gw_ip=192.168.1.1
+            ;;
+        *)
+            echo unknown alias
+            ;;
+    esac
+else
+    echo gw gw-alias
     exit 1
 fi
-
-gw_ip=$1
-dev=$2
 
 ip route show | grep default |
     while IFS= read -r line; do
         ip route del $line
     done
 
-ip route add default via $gw_ip dev $dev
+ip route add default via $gw_ip

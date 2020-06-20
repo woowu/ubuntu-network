@@ -28,7 +28,9 @@ ip route del 23.37.150.0/24 via $1 dev $2
 ip route del 52.202.62.0/24 via $1 dev $2
 ip route del 52.97.2.0/24 via $1 dev $2
 ip route del 52.108.32.0/24 via $1 dev $2
-ip route del 172.217.24.0/24 via $1 dev $2
+ip route del 172.217.24.13/32 via $1 dev $2
+ip route del 172.217.24.10/32 via $1 dev $2
+ip route del 172.217.24.14/32 via $1 dev $2
 ip route del 40.101.7.0/24 via $1 dev $2
 ip route del 40.100.28.0/24 via $1 dev $2
 ip route del 40.100.29.0/24 via $1 dev $2
@@ -38,7 +40,7 @@ ip route del 52.114.132.0/24 via $1 dev $2
 ip route del 10.195.20.0/24 via $1 dev $2
 ip route del 13.57.129.0/24 via $1 dev $2
 ip route del 52.114.159.0/24 via $1 dev $2
-ip route del 172.217.27.0/24 via $1 dev $2
+ip route del 172.217.27.138/32 via $1 dev $2
 ip route del 23.218.94.0/24 via $1 dev $2
 ip route del 52.114.168.0/24 via $1 dev $2
 ip route del 52.114.158.0/24 via $1 dev $2

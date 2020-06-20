@@ -28,7 +28,6 @@ ip route add 23.37.150.0/24 via $1 dev $2
 ip route add 52.202.62.0/24 via $1 dev $2
 ip route add 52.97.2.0/24 via $1 dev $2
 ip route add 52.108.32.0/24 via $1 dev $2
-ip route add 172.217.24.0/24 via $1 dev $2
 ip route add 40.101.7.0/24 via $1 dev $2
 ip route add 40.100.28.0/24 via $1 dev $2
 ip route add 40.100.29.0/24 via $1 dev $2
@@ -38,7 +37,6 @@ ip route add 52.114.132.0/24 via $1 dev $2
 ip route add 10.195.20.0/24 via $1 dev $2
 ip route add 13.57.129.0/24 via $1 dev $2
 ip route add 52.114.159.0/24 via $1 dev $2
-ip route add 172.217.27.0/24 via $1 dev $2
 ip route add 23.218.94.0/24 via $1 dev $2
 ip route add 52.114.168.0/24 via $1 dev $2
 ip route add 52.114.158.0/24 via $1 dev $2
@@ -75,7 +73,6 @@ ip route add 13.32.53.0/24 via $1 dev $2
 ip route add 151.101.66.0/24 via $1 dev $2
 ip route add 23.213.98.0/24 via $1 dev $2
 ip route add 10.22.192.0/24 via $1 dev $2
-ip route add 172.217.160.0/24 via $1 dev $2
 ip route add 180.153.27.0/24 via $1 dev $2
 ip route add 104.16.132.0/24 via $1 dev $2
 ip route add 3.210.62.0/24 via $1 dev $2

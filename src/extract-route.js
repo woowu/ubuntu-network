@@ -160,6 +160,19 @@ const isHostActive = (ip, cb) => {
 const hostsPreProcess = (ips, cb) => {
     const activeHosts = [];
     const inactiveHosts = [];
+    const excludeHosts = [
+        /^0\.0\.0\./,
+        /^172\.217\.24\./,
+        /^172\.217\.27\./,
+        /^172\.217\.160\./,
+    ];
+
+    const shouldSkipHost = ip => {
+        for (var i = 0; i < excludeHosts.length; ++i) 
+            if (ip.search(excludeHosts[i]) >= 0)
+                return true;
+        return false;
+    };
 
     const process = ips => {
         if (! ips.length) return cb(null, activeHosts, inactiveHosts);
@@ -167,7 +180,7 @@ const hostsPreProcess = (ips, cb) => {
         const ip = ips[0];
         const remaining = ips.slice(1);
 
-        if (ip.search(/^0\.0\.0\./) == 0) {
+        if (shouldSkipHost(ip)) {
             console.log(`skip ${ip}`);
             process(remaining);
         } else

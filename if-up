@@ -1,0 +1,47 @@
+#!/bin/bash
+
+env > /tmp/$IFACE.env
+
+# Do nothing for some interfaces.
+#
+if echo $IFACE | /usr/bin/grep -P "^tun\d" >/dev/null ; then  
+    exit 0
+fi
+
+# Presentation of /tmp/no-ifup will disable this script.
+#
+if [ -f /tmp/no-ifup]; then
+    exit 0;
+fi
+
+# For interface which is not connecting Honeywell network.
+#
+if ! env | grep "DHCP4_DOMAIN_NAME=.*honeywell.com" >/dev/null 2>&1 ; then
+    # If no default router from DHCP, do nothing
+    #
+    if [ ! -n "${DHCP4_ROUTERS}" ]; then
+        exit 0
+    fi
+
+    n_dft_gw=`/usr/sbin/ip route show default | /usr/bin/wc -l`
+
+    # If no default router, I add one over this interface.
+    #
+    if [ $n_dft_gw -eq 0 ]; then
+        /usr/sbin/ip route add default via $DHCP4_ROUTERS dev $IFACE
+
+    # If ther are more than one default routers in the table,
+    # I delete the router over this interface.
+    elif [ $_dft_gw -gt 1 ]; then
+        /usr/sbin/ip route del default via $DHCP4_ROUTERS dev $IFACE
+    fi
+
+# Use static method to config routers in Honeywell network
+#
+else
+    /usr/sbin/ip route del default via $DHCP4_ROUTERS dev $IFACE 2>/dev/null
+    static_route_script=/home/woody/coding/hon-net/route-table-add
+    if [ -x ${static_route_script} ]; then
+        ${static_route_script} $DHCP4_ROUTERS $IFACE
+    fi
+fi
