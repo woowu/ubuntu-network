@@ -5,10 +5,11 @@
 
 if [ $# -eq 1 ]; then
     case $1 in
-        -list)
+        --list)
             echo honlan
             echo iphone
             echo jike
+            exit 0
             ;;
         honlan)
             gw_ip=159.99.248.1
@@ -21,6 +22,7 @@ if [ $# -eq 1 ]; then
             ;;
         *)
             echo unknown alias
+            exit 1
             ;;
     esac
 else

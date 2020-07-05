@@ -1,0 +1,2 @@
+ip route add 104.76.19.106/32 via $1 dev $2
+ip route add 104.76.17.105/32 via $1 dev $2
