@@ -5,40 +5,20 @@ const fs = require('fs');
 const os = require('os');
 const spawn = require('child_process').spawn;
 
-const argv = require('yargs')
-    .option('file', {
-        alias: 'f',
-        description: 'pcap file',
-    })
-    .option('interface', {
-        alias: 'i',
-        description: 'network interface name used to create route entries',
-    })
-    .option('help', {
-        alias: 'h',
-        description: 'Extrace route and name resolve inforation from a pcap'
-            + ' traffics file. It then create two script used for adding'
-            + ' and removing these route entries to/from a network interface.'
-            + ' A Unix hosts file also created for holding name resolution'
-            + ' information.',
-    })
-    .argv
-
-if (! argv.file) {
-    console.error('no pcap file provided');
-    process.exit(1);
-}
-if (! argv.i) {
-    console.error('no network interface name provided');
-    process.exit(1);
-}
-
-const file = argv.file;
-const nif = argv.interface;
+const command_help = {
+    'extract-all': 'Extrace route and name resolve inforation from the pcap'
+        + ' traffics file. It then create two script used for adding'
+        + ' and removing these route entries to/from a network interface.'
+        + ' A Unix hosts file also created for holding name resolution'
+        + ' information.',
+    'print-hosts': 'print hosts in the pcap file',
+};
 
 const activeHosts = [];
 const inactiveHosts = [];
 
+var file;
+var nif;
 var localIps;
 var gateway;
 
@@ -99,7 +79,7 @@ const extractHosts = cb => {
                 ip = match[i];
             else
                 ip = match[i].split('.').slice(0, 4).join('.');
-            if (! localIps.includes(ip))
+            if (! localIps || ! localIps.includes(ip))
                 ips.add(ip);
         }
     };
@@ -365,25 +345,62 @@ const handleExtractedHosts = hosts => {
     });
 };
 
-localIps = getLocalIps(nif);
+const extractAll = () => {
+    localIps = getLocalIps(nif);
 
-if (! localIps || ! localIps.length) {
-    console.log(`${nif} not asssigned with ip address`);
-    process.exit(1);
-}
+    if (! localIps || ! localIps.length)
+        throw new Error(`${nif} not asssigned with ip address`);
 
-getGatewayIp(nif, (err, gw) => {
-    if (err) {
-        console.error(err);
-        process.exit(1);
-    }
-    gateway = gw;
+    getGatewayIp(nif, (err, gw) => {
+        if (err) throw err;
+        gateway = gw;
 
-    extractHosts((err, hosts) => {
-        if (err) {
-            console.error(err);
-            process.exit(1);
-        }
-        handleExtractedHosts(hosts);
+        extractHosts((err, hosts) => {
+            if (err) throw err;
+            handleExtractedHosts(hosts);
+        });
     });
-});
+};
+
+const ipToNum = ip => {
+    return ip.split('.').reduce((acc, curr) => {
+        return +acc * 256  + (+curr);
+    }, 0); 
+};
+
+require('yargs')
+    .command('extract-all file', command_help['extract-all'], yargs => {
+        yargs
+            .option('interface', {
+                alias: 'i',
+                description: 'network interface name used to create route entries',
+            })
+            .positional('file', {
+                describe: 'pcap file',
+            })
+    }, argv => {
+        if (! argv.i) throw new Error('no network interface name provided');
+        file = argv.file;
+        nif = argv.interface;
+        extractAll();
+    })
+    .command('print-hosts file', command_help['print-hosts'], yargs => {
+        yargs
+            .positional('file', {
+                describe: 'pcap file',
+            })
+    }, argv => {
+        file = argv.file;
+        extractHosts((err, hosts) => {
+            if (err) throw err;
+            hosts.sort((a, b) => {
+                return ipToNum(a) - ipToNum(b);
+            });
+            hosts.forEach(h => {
+                console.log(h);
+            });
+        });
+    })
+    .help('h')
+    .alias('h', 'help')
+    .argv;
