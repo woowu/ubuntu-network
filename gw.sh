@@ -39,4 +39,5 @@ ip route show | grep default |
         ip route del $line
     done
 
+echo ip route add default via $gw_ip
 ip route add default via $gw_ip
