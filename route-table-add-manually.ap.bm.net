@@ -1,0 +1,3 @@
+#!/bin/sh
+ip route add 10.49.0.0/16 via $1 dev $2
+ip route add 10.158.0.0/16 via $1 dev $2

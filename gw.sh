@@ -6,11 +6,15 @@
 if [ $# -eq 1 ]; then
     case $1 in
         --list)
+            echo lglan
             echo honlan
             echo honwan
             echo iphone
             echo jike
             exit 0
+            ;;
+        lglan)
+            gw_ip=10.86.11.254
             ;;
         honlan)
             gw_ip=159.99.248.1
