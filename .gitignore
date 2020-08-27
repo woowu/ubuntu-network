@@ -1,4 +1,5 @@
 node_modules/
+captures/
 log
 route-table
 name-resolve
