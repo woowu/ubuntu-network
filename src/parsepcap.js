@@ -19,8 +19,10 @@ const inactiveHosts = [];
 
 var file;
 var nif;
+var domain;
 var localIps;
 var gateway;
+var skipWs;
 
 const getLocalIps = nif => {
     const descList = os.networkInterfaces()[nif];
@@ -39,7 +41,7 @@ const getGatewayIp = (nif, cb) => {
     const stdout = require('readline').createInterface({
         input: iproute.stdout,
     });
-    const pat = /default via ([0-9.]+) dev ([^\s])+ .*/;
+    const pat = /default via ([0-9.]+) dev ([^\s]+).*/;
 
     var gw;
     stdout.on('line', line => {
@@ -161,7 +163,7 @@ const hostsPreProcess = (ips, cb) => {
         const remaining = ips.slice(1);
 
         if (shouldSkipHost(ip)) {
-            console.log(`skip ${ip}`);
+            skipWs.write(`${ip}\n`);
             process(remaining);
         } else
             isHostActive(ip, (err, active) => {
@@ -279,7 +281,7 @@ const handleExtractedHosts = hosts => {
         ws.end();
     };
     const saveNameResolves = list => {
-        const ws = fs.createWriteStream(`./name-resolve`);
+        const ws = fs.createWriteStream(`./name-resolve.${domain}.${nif}`);
         const blacklist = [
             /\bgoogle.com\b/,
             /\bgoogleapis.com\b/,
@@ -289,8 +291,22 @@ const handleExtractedHosts = hosts => {
             /\bdropbox.com\b/,
         ];
         const whitelist = [
-            /honeywell/,
-            /concursolutions/,
+            /landisgyr/,
+            /bm\.net/,
+            /microsoft/,
+            /officeapps/,
+            /office.com/,
+            /live\.com/,
+            /login\.msa\.msidentity\.com/,
+            /lg\.prod\./,
+            /office\.net/,
+            /teams-/,
+            /skype/,
+            /emea\./,
+            /azure\.com/,
+            /msftauth\.net/,
+            /msauthimages\.net/,
+            /expressapisv2\.net/,
         ];
         list.forEach(line => {
             //var exclude = false;
@@ -306,13 +322,15 @@ const handleExtractedHosts = hosts => {
             if (include)
                 ws.write(`${line}\n`);
             else
-                console.log('skip:', line);
+                skipWs.write(`${line}\n`);
         });
         ws.end();
     };
     const saveRouteTable = (networkList, gateway, nif) => {
-        const ws1 = fs.createWriteStream('./route-table-add', {mode: 0o755});
-        const ws2 = fs.createWriteStream('./route-table-del', {mode: 0o755});
+        const ws1 = fs.createWriteStream(`./route-table-add.${domain}.${nif}`,
+            {mode: 0o755});
+        const ws2 = fs.createWriteStream(`./route-table-del.${domain}.${nif}`,
+            {mode: 0o755});
         ws1.write('#!/bin/sh\n');
         ws2.write('#!/bin/sh\n');
         networkList.forEach(dst => {
@@ -333,14 +351,16 @@ const handleExtractedHosts = hosts => {
     };
 
     console.log(`ttl ${hosts.length} hosts found`);
+    skipWs = fs.createWriteStream(`./skip.${domain}.${nif}`);
     hostsPreProcess(hosts, (err, activeHosts, inactiveHosts) => {
-        saveHostList(activeHosts, 'active-hosts');
-        saveHostList(inactiveHosts, 'inactive-hosts');
+        saveHostList(activeHosts, `active-hosts.${domain}.${nif}`);
+        saveHostList(inactiveHosts, `inactive-hosts.${domain}.${nif}`);
 
         saveRouteTable(hostsToNetworkList(activeHosts), gateway, nif);
 
         extractNameResolve(activeHosts, (err, nameResolves) => {
             saveNameResolves(nameResolves);
+            skipWs.end();
         });
     });
 };
@@ -354,6 +374,7 @@ const extractAll = () => {
     getGatewayIp(nif, (err, gw) => {
         if (err) throw err;
         gateway = gw;
+        console.log(`gateway on ${nif} is ${gateway}`);
 
         extractHosts((err, hosts) => {
             if (err) throw err;
@@ -375,13 +396,18 @@ require('yargs')
                 alias: 'i',
                 description: 'network interface name used to create route entries',
             })
+            .option('domain', {
+                alias: 'd',
+                description: 'domain name that will be used as suffix for generated files',
+            })
             .positional('file', {
                 describe: 'pcap file',
             })
+            .demandOption(['interface', 'domain']);
     }, argv => {
-        if (! argv.i) throw new Error('no network interface name provided');
         file = argv.file;
         nif = argv.interface;
+        domain = argv.domain;
         extractAll();
     })
     .command('print-hosts file', command_help['print-hosts'], yargs => {

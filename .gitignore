@@ -1,9 +1,9 @@
 node_modules/
 captures/
 log
-route-table
-name-resolve
-active-hosts
-inactive-hosts
+route-table.*
+name-resolve.*
+active-hosts.*
+inactive-hosts.*
 *.add.default
 *.del.default
