@@ -1,0 +1,3 @@
+#!/bin/sh
+# pan.baidu.com
+ip route add 180.149.145.241/32 via $1 dev $2
